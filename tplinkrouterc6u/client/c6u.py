@@ -693,6 +693,38 @@ class TplinkBaseRouter(AbstractRouter, TplinkRequest):
         })
         self.request(path, urlencode({'operation': 'insert', 'new': new}))
 
+    def update_ipv4_reservation(self, macaddr: str, ipaddr: str | None = None,
+                                comment: str | None = None,
+                                enable: bool | None = None) -> None:
+        """Update an existing reservation by MAC without deleting its row.
+
+        Read the complete current row, preserve unrecognized firmware fields,
+        and send old/new data as the LuCI web UI does. A missing/ambiguous MAC
+        fails closed. As with deletes, another administrator can race the
+        read/write sequence; the router does not offer a verified CAS API.
+        """
+        data = self.request(self._url_ipv4_reservations, 'operation=load')
+        items = self._as_list(data, 'list', 'IPv4 reservation')
+        target_mac = str(get_mac(macaddr))
+        matches = [item for item in items if item.get('mac')
+                   and str(get_mac(item['mac'])) == target_mac]
+        if len(matches) != 1:
+            raise ClientException('Expected one reservation for MAC {}, found {}'
+                                  .format(macaddr, len(matches)))
+        old = dict(matches[0])
+        new = dict(old)
+        if ipaddr is not None:
+            new['ip'] = str(get_ip(ipaddr))
+        if comment is not None:
+            new['comment'] = comment
+        if enable is not None:
+            new['enable'] = 'on' if enable else 'off'
+        path = self._url_ipv4_reservations.split('&operation=')[0]
+        self.request(path, urlencode({
+            'operation': 'update', 'key': old['mac'],
+            'old': dumps(old), 'new': dumps(new),
+        }))
+
     def delete_ipv4_reservation(self, macaddr: str) -> None:
         """Delete an IPv4 DHCP address reservation.
 
