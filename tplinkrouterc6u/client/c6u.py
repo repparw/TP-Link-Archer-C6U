@@ -673,7 +673,8 @@ class TplinkBaseRouter(AbstractRouter, TplinkRequest):
 
         for item in self._as_list(data, 'list', 'IPv4 reservation'):
             ipv4_reservations.append(
-                IPv4Reservation(get_mac(item['mac']), get_ip(item['ip']), item['comment'],
+                IPv4Reservation(get_mac(item['mac']), get_ip(item['ip']),
+                                item.get('hostname') or item.get('comment') or '',
                                 self._str2bool(item['enable'])))
 
         return ipv4_reservations
@@ -688,6 +689,7 @@ class TplinkBaseRouter(AbstractRouter, TplinkRequest):
         new = dumps({
             'mac': str(get_mac(macaddr)),
             'ip': ipaddr,
+            'hostname': comment,
             'comment': comment,
             'enable': 'on' if enable else 'off',
         })
@@ -716,6 +718,7 @@ class TplinkBaseRouter(AbstractRouter, TplinkRequest):
         if ipaddr is not None:
             new['ip'] = str(get_ip(ipaddr))
         if comment is not None:
+            new['hostname'] = comment
             new['comment'] = comment
         if enable is not None:
             new['enable'] = 'on' if enable else 'off'
