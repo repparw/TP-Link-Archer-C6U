@@ -385,7 +385,9 @@ class TplinkBaseRouter(AbstractRouter, TplinkRequest):
         return firmware
 
     def _status_conn_type(self, data: dict) -> str | None:
-        return data.get('conn_type')
+        # Prefer the readable connection type the firmware reports alongside
+        # the numeric status code (eg. 'dhcp' vs '0' on AX23 v2 1.1.2).
+        return data.get('wan_ipv4_conntype') or data.get('conn_type')
 
     def get_status(self) -> Status:
         data = self.request('admin/status?form=all&operation=read', 'operation=read')
