@@ -12,6 +12,7 @@ Fixes: https://github.com/AlexandrErohin/home-assistant-tplink-router/issues/220
 """
 
 import hmac
+from hmac import compare_digest
 import json
 from re import search
 from hashlib import sha256
@@ -46,7 +47,11 @@ class TplinkRouterSG(TplinkBaseRouter):
 
     def __init__(self, host: str, password: str, username: str = 'admin',
                  logger: Logger = None, verify_ssl: bool = True,
-                 timeout: int = 30) -> None:
+                 timeout: int = 30, *, password_key_pin: str | None = None,
+                 auth_key_pin: str | None = None) -> None:
+        # Validate pins before any network I/O, including a future authorize().
+        self._password_key_pin = self._normalize_key_pin(password_key_pin)
+        self._auth_key_pin = self._normalize_key_pin(auth_key_pin)
         super().__init__(host, password, username, logger, verify_ssl, timeout)
         self._aes_key = ''
         self._aes_iv = ''
@@ -57,6 +62,45 @@ class TplinkRouterSG(TplinkBaseRouter):
         self._pwdNN = ''
         self._pwdEE = ''
         self._data_block = 'data'
+
+    @staticmethod
+    def _normalize_key_pin(pin: str | None) -> str | None:
+        """Validate and normalize a SHA-256 DER/SPKI fingerprint, if supplied."""
+        if pin is None or pin == '':
+            return None
+        if not isinstance(pin, str):
+            raise ValueError('RSA public-key pin must be a SHA-256 hex string')
+        normalized = pin.strip().lower()
+        if normalized.startswith('sha256:'):
+            normalized = normalized[len('sha256:'):]
+        if len(normalized) != 64:
+            raise ValueError('RSA public-key pin must contain 64 hexadecimal characters')
+        try:
+            bytes.fromhex(normalized)
+        except ValueError as exc:
+            raise ValueError('RSA public-key pin must be hexadecimal') from exc
+        return normalized
+
+    @staticmethod
+    def _key_fingerprint(n_hex: str, e_hex: str) -> str:
+        """SHA-256 over DER SubjectPublicKeyInfo, matching Go x509.MarshalPKIXPublicKey."""
+        public = construct((int(n_hex, 16), int(e_hex, 16)))
+        return sha256(public.export_key(format='DER')).hexdigest()
+
+    @classmethod
+    def _verify_key_pin(cls, pin: str | None, n_hex: str,
+                        e_hex: str, role: str) -> None:
+        if pin is None:
+            return
+        try:
+            actual = cls._key_fingerprint(n_hex, e_hex)
+        except (TypeError, ValueError) as exc:
+            raise ClientException('TplinkRouterSG - Invalid {} RSA key'.format(role)) from exc
+        if not compare_digest(actual, pin):
+            raise ClientException(
+                'TplinkRouterSG - {} RSA key pin mismatch: router key '
+                'sha256:{} does not match configured sha256:{}'.format(
+                    role, actual, pin))
 
     def supports(self) -> bool:
         """Check if this router uses SG/CE_RED encryption."""
@@ -140,6 +184,8 @@ class TplinkRouterSG(TplinkBaseRouter):
             if self._logger:
                 self._logger.debug(error)
             raise ClientException(error)
+        self._verify_key_pin(self._password_key_pin, self._pwdNN, self._pwdEE,
+                             'password')
 
     def _request_auth_keys(self) -> None:
         """Get sequence number and RSA public key for data encryption."""
@@ -158,6 +204,7 @@ class TplinkRouterSG(TplinkBaseRouter):
             if self._logger:
                 self._logger.debug(error)
             raise ClientException(error)
+        self._verify_key_pin(self._auth_key_pin, self._nn, self._ee, 'auth')
 
     def _build_login_signature(self, data_len: int) -> str:
         """Build RSA-OAEP encrypted signature for login requests."""
