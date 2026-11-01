@@ -43,8 +43,10 @@ class TestSGPins(TestCase):
             post.assert_not_called()
 
     def test_spki_fingerprint_matches_pycryptodome_der(self):
+        # Independent ASN.1 DER/SPKI reference (same as Go x509.MarshalPKIXPublicKey).
         self.assertEqual(
-            TplinkRouterSG._key_fingerprint(N, E), expected_fingerprint())
+            TplinkRouterSG._key_fingerprint(N, E),
+            '4951e6aaa9d960092f30cd89e0ca6b1f9ea91708a963652e03f2aa55feb44cac')
         client = TplinkRouterSG(
             'http://router.invalid', 'pw',
             password_key_pin='SHA256:' + expected_fingerprint().upper(),
