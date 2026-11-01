@@ -111,7 +111,7 @@ class TestTPLinkClient(TestCase):
         ],
         "guest_5g_psk_key": "",
         "cpu_usage": 0.28,
-        "conn_type": "1",
+        "conn_type": "1", "wan_ipv4_conntype": "static",
         "guest_2g_encryption": "none",
         "wireless_5g_encryption": "psk",
         "guest_5g_ssid": "TP-Link_Guest_21CC_5G",
@@ -298,7 +298,7 @@ class TestTPLinkClient(TestCase):
         self.assertIsNone(status.ewan_connected)
         self.assertEqual(status.wan_ipv4_uptime, None)
         self.assertEqual(status.mem_usage, 0.43)
-        self.assertEqual(status.conn_type, '1')
+        self.assertEqual(status.conn_type, 'static')
         self.assertEqual(status.cpu_usage, 0.28)
         self.assertEqual(len(status.devices), 5)
         self.assertIsInstance(status.devices[0], Device)
@@ -1595,14 +1595,14 @@ class TestTPLinkClient(TestCase):
         self.assertEqual(body['operation'], 'insert')
         self.assertEqual(
             loads(body['new']),
-            {'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'comment': 'auto', 'enable': 'on'})
+            {'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'hostname': 'auto', 'comment': 'auto', 'enable': 'on'})
 
         # MAC is normalised to dash-uppercase and a disabled entry sends enable=off
         client.add_ipv4_reservation('aa-bb-cc-dd-ee-ff', '10.0.0.50', enable=False)
         body = dict(parse_qsl(check_data))
         self.assertEqual(
             loads(body['new']),
-            {'mac': 'AA-BB-CC-DD-EE-FF', 'ip': '10.0.0.50', 'comment': '', 'enable': 'off'})
+            {'mac': 'AA-BB-CC-DD-EE-FF', 'ip': '10.0.0.50', 'hostname': '', 'comment': '', 'enable': 'off'})
 
     def test_delete_ipv4_reservation(self) -> None:
         calls = []
@@ -1614,7 +1614,7 @@ class TestTPLinkClient(TestCase):
                 calls.append((path, data))
                 if 'operation=load' in path or (data and 'operation=load' in data):
                     return [
-                        {'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'comment': 'auto', 'enable': 'on'},
+                        {'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'hostname': 'auto', 'comment': 'auto', 'enable': 'on'},
                         # Router may store a non-dash form; remove key must echo that string.
                         {'mac': 'aa:bb:cc:dd:ee:ff', 'ip': '10.0.0.50', 'comment': '', 'enable': 'off'},
                     ]
@@ -1646,8 +1646,8 @@ class TestTPLinkClient(TestCase):
                 if 'operation=load' in path or (data and 'operation=load' in data):
                     return {
                         'list': [
-                            {'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'comment': 'auto', 'enable': 'on'},
-                            {'mac': 'AA-BB-CC-DD-EE-FF', 'ip': '10.0.0.50', 'comment': '', 'enable': 'off'},
+                            {'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'hostname': 'auto', 'comment': 'auto', 'enable': 'on'},
+                            {'mac': 'AA-BB-CC-DD-EE-FF', 'ip': '10.0.0.50', 'hostname': '', 'comment': '', 'enable': 'off'},
                         ]
                     }
                 return None
@@ -1667,7 +1667,7 @@ class TestTPLinkClient(TestCase):
         class TPLinkRouterTest(router_class):
             def request(self, path: str, data: str,
                         ignore_response: bool = False, ignore_errors: bool = False) -> dict | list | None:
-                return [{'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'comment': 'auto', 'enable': 'on'}]
+                return [{'mac': '02-00-00-00-00-16', 'ip': '10.0.0.116', 'hostname': 'auto', 'comment': 'auto', 'enable': 'on'}]
 
         client = TPLinkRouterTest('', '')
         with self.assertRaises(ClientException):
@@ -2318,7 +2318,7 @@ class TestTPLinkClient(TestCase):
             "lan_ipv4_ipaddr": "192.168.0.1",
             "mem_usage": 0.43,
             "cpu_usage": 0.28,
-            "conn_type": "1",
+            "conn_type": "1", "wan_ipv4_conntype": "static",
             "access_devices_wired": [
                 {
                     "wire_type": "wired",

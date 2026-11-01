@@ -46,8 +46,14 @@ class TplinkRouterSG(TplinkBaseRouter):
 
     def __init__(self, host: str, password: str, username: str = 'admin',
                  logger: Logger = None, verify_ssl: bool = True,
-                 timeout: int = 30) -> None:
+                 timeout: int = 30,
+                 password_key_pin: str | None = None,
+                 auth_key_pin: str | None = None) -> None:
         super().__init__(host, password, username, logger, verify_ssl, timeout)
+        self._password_key_pin = self._normalize_pin(
+            password_key_pin, 'password_key_pin')
+        self._auth_key_pin = self._normalize_pin(
+            auth_key_pin, 'auth_key_pin')
         self._aes_key = ''
         self._aes_iv = ''
         self._hash = ''
@@ -87,6 +93,57 @@ class TplinkRouterSG(TplinkBaseRouter):
             return any(c in SG_CERTIFICATIONS for c in certs)
         except Exception:
             return False
+
+    @staticmethod
+    def _normalize_pin(pin, name):
+        """Canonicalize an optional RSA public-key pin (SHA-256 hex)."""
+        if not pin:
+            return ''
+        normalized = str(pin).strip().lower()
+        if normalized.startswith('sha256:'):
+            normalized = normalized[len('sha256:'):]
+        if len(normalized) != 64:
+            raise ValueError(
+                '{} must be 64 hex characters (SHA-256), optionally '
+                "prefixed with 'sha256:'".format(name))
+        try:
+            int(normalized, 16)
+        except ValueError:
+            raise ValueError('{} must be hexadecimal'.format(name)) from None
+        return normalized
+
+    @staticmethod
+    def _fingerprint_spki(n_hex, e_hex):
+        """SHA-256 of the key's DER SubjectPublicKeyInfo (Go-x509-compatible)."""
+        from Crypto.PublicKey import RSA
+
+        pub = RSA.construct((int(n_hex, 16), int(e_hex, 16)))
+        body = pub.export_key(format='DER')
+
+        def der_len(n):
+            if n < 0x80:
+                return bytes([n])
+            b = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+            return bytes([0x80 | len(b)]) + b
+
+        alg = bytes([0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7,
+                     0x0D, 0x01, 0x01, 0x01, 0x05, 0x00])
+        bitstring = bytes([0x03]) + der_len(len(body) + 1) + b'\x00' + body
+        spki_inner = alg + bitstring
+        spki = bytes([0x30]) + der_len(len(spki_inner)) + spki_inner
+        return sha256(spki).hexdigest()
+
+    def _verify_key_pin(self, pin, n_hex, e_hex, role):
+        """Fail closed when the served key does not match the configured pin."""
+        if not pin:
+            return
+        fingerprint = self._fingerprint_spki(n_hex, e_hex)
+        if fingerprint != pin:
+            raise ClientException(
+                '{} key pin mismatch: router key fingerprint sha256:{} does '
+                'not match the configured pin sha256:{}; if the router was '
+                'replaced or its keys were rotated intentionally, update the '
+                'pin'.format(role, fingerprint, pin))
 
     def _generate_aes_key(self) -> None:
         """Generate random AES key and IV (16 random digits, matching JS behavior)."""
@@ -140,6 +197,8 @@ class TplinkRouterSG(TplinkBaseRouter):
             if self._logger:
                 self._logger.debug(error)
             raise ClientException(error)
+        self._verify_key_pin(self._password_key_pin,
+                             self._pwdNN, self._pwdEE, 'password')
 
     def _request_auth_keys(self) -> None:
         """Get sequence number and RSA public key for data encryption."""
@@ -158,6 +217,8 @@ class TplinkRouterSG(TplinkBaseRouter):
             if self._logger:
                 self._logger.debug(error)
             raise ClientException(error)
+        self._verify_key_pin(self._auth_key_pin,
+                             self._nn, self._ee, 'auth')
 
     def _build_login_signature(self, data_len: int) -> str:
         """Build RSA-OAEP encrypted signature for login requests."""
