@@ -56,12 +56,9 @@ class TestSGPins(TestCase):
 
     @patch('tplinkrouterc6u.client.sg.post')
     def test_both_matching_pins_allow_key_exchange(self, post):
-        post.side_effect = [
-            reply('password', [N, E]),
-            reply('key', [N, E]),
-        ]
-        # Add seq to second mock.
-        post.side_effect[1].json.return_value['data']['seq'] = 17
+        auth = reply('key', [N, E])
+        auth.json.return_value['data']['seq'] = 17
+        post.side_effect = [reply('password', [N, E]), auth]
         fp = expected_fingerprint()
         router = TplinkRouterSG('http://router.invalid', 'pw',
                                 password_key_pin=fp, auth_key_pin=fp)
