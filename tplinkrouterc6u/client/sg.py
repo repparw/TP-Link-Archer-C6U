@@ -409,6 +409,17 @@ class TplinkRouterSG(TplinkBaseRouter):
                 self._logger.debug(error)
             raise ClientError(error)
 
+        # The router has rejected an expired session before executing the
+        # operation. Surface this exact decrypted response to callers so they
+        # can reauthorize safely, without confusing a transport read timeout
+        # (whose write outcome may be unknown) with session expiration.
+        if isinstance(decrypted, dict):
+            error_code = decrypted.get('errorcode')
+            if error_code is None and isinstance(decrypted.get('data'), dict):
+                error_code = decrypted['data'].get('errorcode')
+            if error_code == 'timeout':
+                raise ClientError('TplinkRouterSG - Response with error; errorcode timeout')
+
         error = ('TplinkRouterSG - Response with error; Request {} - Response {}'
                  .format(path, response.text[:200] if response.text else ''))
         if self._logger:
