@@ -36,11 +36,10 @@ def test_other_router_error_is_not_reported_as_session_expiry():
     client._stok = "session"
     client._sysauth = "cookie"
 
+    payload = json.dumps({"success": False, "errorcode": "invalid_request"})
     with patch.object(client, "_aes_encrypt", return_value="encrypted"), \
          patch.object(client, "_build_request_signature", return_value="sig"), \
-         patch.object(client, "_aes_decrypt", return_value=json.dumps({
-             "success": False, "errorcode": "invalid_request",
-         })), \
+         patch.object(client, "_aes_decrypt", return_value=payload), \
          patch("tplinkrouterc6u.client.sg.post") as post:
         post.return_value.json.return_value = {"data": "encrypted"}
         post.return_value.text = '{"data":"encrypted"}'
